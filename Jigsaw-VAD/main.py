@@ -66,7 +66,7 @@ def train(args):
                                           frame_num=args.sample_num,
                                           static_threshold=args.static_threshold)
 
-    vad_dataloader = DataLoader(vad_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    vad_dataloader = DataLoader(vad_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, prefetch_factor=2)
     net = model.WideBranchNet(time_length=args.sample_num, num_classes=[args.sample_num ** 2, 81])
 
     if args.checkpoint is not None:
@@ -157,7 +157,7 @@ def val(args, net=None):
                                               detect_dir=detect_pkl,
                                               fliter_ratio=args.filter_ratio,
                                               frame_num=args.sample_num)
-    testing_data_loader = DataLoader(testing_dataset, batch_size=256, shuffle=False, num_workers=4, drop_last=False)
+    testing_data_loader = DataLoader(testing_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, drop_last=False, prefetch_factor=2)
 
     net.eval()
 
