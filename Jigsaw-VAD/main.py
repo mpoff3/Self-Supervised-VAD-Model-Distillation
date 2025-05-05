@@ -31,11 +31,14 @@ def get_configs():
     parser.add_argument("--gpu_id", type=str, default=0)
     parser.add_argument("--log_date", type=str, default=None)
     parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--static_threshold", type=float, default=0.3)
     parser.add_argument("--sample_num", type=int, default=5)
     parser.add_argument("--filter_ratio", type=float, default=0.8)
     parser.add_argument("--checkpoint", type=str, default=None)
     parser.add_argument("--dataset", type=str, default="shanghaitech", choices=['shanghaitech', 'ped2', 'avenue'])
+    parser.add_argument("--debug_data", action="store_true")
+    parser.add_argument("--prefetch", type=int, default=None)
     args = parser.parse_args()
 
     args.device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
@@ -66,7 +69,7 @@ def train(args):
                                           frame_num=args.sample_num,
                                           static_threshold=args.static_threshold)
 
-    vad_dataloader = DataLoader(vad_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, prefetch_factor=2)
+    vad_dataloader = DataLoader(vad_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=True, prefetch_factor=args.prefetch if args.workers > 0 else None)
     net = model.WideBranchNet(time_length=args.sample_num, num_classes=[args.sample_num ** 2, 81])
 
     if args.checkpoint is not None:
@@ -94,10 +97,11 @@ def train(args):
     timestamp_in_max = None
 
     for epoch in range(args.epochs):
-        for it, data in enumerate(vad_dataloader):
+        for it, data in tqdm(enumerate(vad_dataloader), total=len(vad_dataloader)):
             video, obj, temp_labels, spat_labels, t_flag = data['video'], data['obj'], data['label'], data["trans_label"], data["temporal"]
             n_temp = t_flag.sum().item()
-
+            if args.debug_data:
+                continue
             obj = obj.cuda(args.device, non_blocking=True)
             temp_labels = temp_labels[t_flag].long().view(-1).cuda(args.device)
             spat_labels = spat_labels[~t_flag].long().view(-1).cuda(args.device)
@@ -157,7 +161,7 @@ def val(args, net=None):
                                               detect_dir=detect_pkl,
                                               fliter_ratio=args.filter_ratio,
                                               frame_num=args.sample_num)
-    testing_data_loader = DataLoader(testing_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, drop_last=False, prefetch_factor=2)
+    testing_data_loader = DataLoader(testing_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, drop_last=False, prefetch_factor=2, persistent_workers=True)
 
     net.eval()
 
