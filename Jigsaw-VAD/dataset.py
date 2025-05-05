@@ -22,7 +22,8 @@ class VideoAnomalyDataset_C3D(Dataset):
                  detect_dir=None,
                  fliter_ratio=0.9,
                  frame_num=7,
-                 static_threshold=0.1):
+                 static_threshold=0.1,
+                 sample_step=None):
 
         assert os.path.exists(data_dir), "{} does not exist.".format(data_dir)
         assert dataset in ['shanghaitech', 'ped2', 'avenue'], 'wrong type of dataset.'
@@ -50,7 +51,9 @@ class VideoAnomalyDataset_C3D(Dataset):
             raise ValueError("data dir: {} is error, not train or test.".format(data_dir))
 
         self.phase = 'testing' if self.test_stage else 'training'
-        if not self.test_stage and self.dataset == 'shanghaitech':
+        if sample_step is not None:
+            self.sample_step = sample_step
+        elif not self.test_stage and self.dataset == 'shanghaitech':
             self.sample_step = 5
         else:
             self.sample_step = 1

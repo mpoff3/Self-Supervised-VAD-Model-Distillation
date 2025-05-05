@@ -39,6 +39,7 @@ def get_configs():
     parser.add_argument("--dataset", type=str, default="shanghaitech", choices=['shanghaitech', 'ped2', 'avenue'])
     parser.add_argument("--debug_data", action="store_true")
     parser.add_argument("--prefetch", type=int, default=None)
+    parser.add_argument("--sample_step", type=int, default=1, help="Step size for sampling frames during testing")
     args = parser.parse_args()
 
     args.device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
@@ -73,14 +74,14 @@ def train(args):
     net = model.WideBranchNet(time_length=args.sample_num, num_classes=[args.sample_num ** 2, 81])
 
     if args.checkpoint is not None:
-        state = torch.load(args.checkpoint)
+        state = torch.load(args.checkpoint, map_location=args.device)
         print('load ' + args.checkpoint)
         net.load_state_dict(state, strict=True)
-        net.cuda()
+        net.to(args.device)
         smoothed_auc, smoothed_auc_avg, _ = val(args, net)
         exit(0)
 
-    net.cuda(args.device)
+    net.to(args.device)
     net = net.train()
 
     criterion = nn.CrossEntropyLoss(reduction='mean')
@@ -160,6 +161,7 @@ def val(args, net=None):
                                               dataset=args.dataset,
                                               detect_dir=detect_pkl,
                                               fliter_ratio=args.filter_ratio,
+                                              sample_step=args.sample_step,
                                               frame_num=args.sample_num)
     testing_data_loader = DataLoader(testing_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, drop_last=False, prefetch_factor=2, persistent_workers=True)
 
@@ -169,7 +171,7 @@ def val(args, net=None):
     for data in tqdm(testing_data_loader):
         videos = data["video"]
         frames = data["frame"].tolist()
-        obj = data["obj"].cuda(args.device)
+        obj = data["obj"].to(args.device)
 
         with torch.no_grad():
             temp_logits, spat_logits = net(obj)
@@ -215,4 +217,4 @@ if __name__ == '__main__':
     args = get_configs()
     train(args)
     # python main.py --dataset avenue --val_step 100 --print_interval 20 --batch_size 192 --sample_num 7 --epochs 100 --static_threshold 0.2
-    # python main.py --dataset avenue --sample_num 7 --checkpoint ../avenue_92.18.pth
+    # python main.py --dataset avenue --sample_num 7 --checkpoint ../avenue_92.18.pth --sample_step 10

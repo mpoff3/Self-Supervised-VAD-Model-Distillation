@@ -10,6 +10,7 @@ import torch.nn.functional as F
 import torch
 import math
 DATA_DIR = os.environ["VAD_DATASET_PATH"]
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def video_label_length(dataset='shanghaitech'):
@@ -172,7 +173,7 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7):
 
         score = np.stack((video_, video2_))
         score = torch.from_numpy(score).unsqueeze(1)
-        score = score.permute((0, 1, 4, 2, 3)).float().cuda()
+        score = score.permute((0, 1, 4, 2, 3)).float().to(device)
         # padding
         p3d = (dim // 2, dim // 2, dim // 2, dim // 2, dim // 2, dim // 2)
         score_padding = F.pad(score, p3d, mode='constant', value=1)
