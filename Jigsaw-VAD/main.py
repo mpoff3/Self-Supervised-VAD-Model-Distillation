@@ -36,6 +36,7 @@ def get_configs():
     parser.add_argument("--filter_ratio", type=float, default=0.8)
     parser.add_argument("--checkpoint", type=str, default=None)
     parser.add_argument("--dataset", type=str, default="shanghaitech", choices=['shanghaitech', 'ped2', 'avenue'])
+    parser.add_argument("--sample_step", type=int, default=1, help="Step size for sampling frames during testing")
     args = parser.parse_args()
 
     args.device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
@@ -70,14 +71,14 @@ def train(args):
     net = model.WideBranchNet(time_length=args.sample_num, num_classes=[args.sample_num ** 2, 81])
 
     if args.checkpoint is not None:
-        state = torch.load(args.checkpoint)
+        state = torch.load(args.checkpoint, map_location=args.device)
         print('load ' + args.checkpoint)
         net.load_state_dict(state, strict=True)
-        net.cuda()
+        net.to(args.device)
         smoothed_auc, smoothed_auc_avg, _ = val(args, net)
         exit(0)
 
-    net.cuda(args.device)
+    net.to(args.device)
     net = net.train()
 
     criterion = nn.CrossEntropyLoss(reduction='mean')
@@ -98,9 +99,9 @@ def train(args):
             video, obj, temp_labels, spat_labels, t_flag = data['video'], data['obj'], data['label'], data["trans_label"], data["temporal"]
             n_temp = t_flag.sum().item()
 
-            obj = obj.cuda(args.device, non_blocking=True)
-            temp_labels = temp_labels[t_flag].long().view(-1).cuda(args.device)
-            spat_labels = spat_labels[~t_flag].long().view(-1).cuda(args.device)
+            obj = obj.to(args.device, non_blocking=True)
+            temp_labels = temp_labels[t_flag].long().view(-1).to(args.device)
+            spat_labels = spat_labels[~t_flag].long().view(-1).to(args.device)
 
             temp_logits, spat_logits = net(obj)
             temp_logits = temp_logits[t_flag].view(-1, args.sample_num)
@@ -152,11 +153,14 @@ def val(args, net=None):
     data_dir = f"{DATA_DIR}{args.dataset}_frames/testing"
     detect_pkl = f'detect/{args.dataset}_test_detect_result_yolov3.pkl'
 
-    testing_dataset = VideoAnomalyDataset_C3D(data_dir,
-                                              dataset=args.dataset,
-                                              detect_dir=detect_pkl,
-                                              fliter_ratio=args.filter_ratio,
-                                              frame_num=args.sample_num)
+    testing_dataset = VideoAnomalyDataset_C3D(
+        data_dir,
+        dataset=args.dataset,
+        detect_dir=detect_pkl,
+        fliter_ratio=args.filter_ratio,
+        frame_num=args.sample_num,
+        sample_step=args.sample_step
+    )
     testing_data_loader = DataLoader(testing_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, drop_last=False, prefetch_factor=2)
 
     net.eval()
@@ -165,7 +169,7 @@ def val(args, net=None):
     for data in tqdm(testing_data_loader):
         videos = data["video"]
         frames = data["frame"].tolist()
-        obj = data["obj"].cuda(args.device)
+        obj = data["obj"].to(args.device)
 
         with torch.no_grad():
             temp_logits, spat_logits = net(obj)
