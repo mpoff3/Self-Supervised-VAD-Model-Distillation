@@ -42,6 +42,7 @@ def get_configs():
     parser.add_argument("--cache", action="store_true")
     parser.add_argument("--sample_step", type=int, default=1, help="Step size for sampling frames during testing")
     parser.add_argument("--model_stride", type=int, default=1, help="sampling rate of the model (do not impact the sample num)")
+    parser.add_argument("--out_checkpoints", type=str, default='./checkpoint', help="out folder for the checkpoints")
 
     args = parser.parse_args()
 
@@ -75,9 +76,20 @@ def train(args):
                                           cache=args.cache,
                                           model_stride=args.model_stride)
 
-    vad_dataloader = DataLoader(vad_dataset, batch_size=args.batch_size, shuffle=True,
+    vad_dataloader = DataLoader(vad_dataset, batch_size=args.batch_size, shuffle=True, persistent_workers=True if args.workers > 0 else False,
                                 num_workers=args.workers, pin_memory=True, prefetch_factor=args.prefetch if args.workers > 0 else None,
                                 )
+
+    testing_dataset = VideoAnomalyDataset_C3D(f"{DATA_DIR}{args.dataset}_frames/testing",
+                                              dataset=args.dataset,
+                                              detect_dir=f'detect/{args.dataset}_test_detect_result_yolov3.pkl',
+                                              fliter_ratio=args.filter_ratio,
+                                              sample_step=args.sample_step,
+                                              frame_num=args.sample_num)
+
+    testing_data_loader = DataLoader(testing_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, drop_last=False,
+                                     prefetch_factor=args.prefetch if args.workers > 0 else None, persistent_workers=True if args.workers > 0 else False, pin_memory=True)
+
     net = model.WideBranchNet(time_length=args.sample_num, num_classes=[args.sample_num ** 2, 81])
     if args.model_stride > 1:
         net = model.WideBranchNet_Strided(time_length=args.sample_num, stride=args.model_stride, nb_patches=9)
@@ -87,7 +99,7 @@ def train(args):
         print('load ' + args.checkpoint)
         net.load_state_dict(state, strict=True)
         net.to(args.device)
-        smoothed_auc, smoothed_auc_avg, _ = val(args, net)
+        smoothed_auc, smoothed_auc_avg, _ = val(args, testing_data_loader, net)
         exit(0)
 
     net.to(args.device)
@@ -142,39 +154,29 @@ def train(args):
 
             global_step += 1
 
-            if global_step % args.val_step == 0 and epoch >= 5:
-                smoothed_auc, smoothed_auc_avg, temp_timestamp = val(args, net)
+            if True:
+                # if global_step % args.val_step == 0 and epoch >= 5:
+                smoothed_auc, smoothed_auc_avg, temp_timestamp = val(args, testing_data_loader, net)
                 writer.add_scalar('Test/smoothed_auc', smoothed_auc, global_step=global_step)
                 writer.add_scalar('Test/smoothed_auc_avg', smoothed_auc_avg, global_step=global_step)
 
                 if smoothed_auc > max_acc:
                     max_acc = smoothed_auc
                     timestamp_in_max = temp_timestamp
-                    save = './checkpoint/{}_{}.pth'.format('best', running_date)
-                    torch.save(net.state_dict(), save)
+                    save = '{}_{}.pth'.format('best', running_date)
+                    os.makedirs(args.out_checkpoints, exist_ok=True)
+                    torch.save(net.state_dict(), os.path.join(args.out_checkpoints, save))
 
                 print('cur max: ' + str(max_acc) + ' in ' + timestamp_in_max)
                 net = net.train()
 
 
-def val(args, net=None):
+def val(args, testing_data_loader, net=None):
     if not args.log_date:
         running_date = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
     else:
         running_date = args.log_date
     print("The running_date : {}".format(running_date))
-
-    # Load Data
-    data_dir = f"{DATA_DIR}{args.dataset}_frames/testing"
-    detect_pkl = f'detect/{args.dataset}_test_detect_result_yolov3.pkl'
-
-    testing_dataset = VideoAnomalyDataset_C3D(data_dir,
-                                              dataset=args.dataset,
-                                              detect_dir=detect_pkl,
-                                              fliter_ratio=args.filter_ratio,
-                                              sample_step=args.sample_step,
-                                              frame_num=args.sample_num)
-    testing_data_loader = DataLoader(testing_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, drop_last=False, prefetch_factor=2, persistent_workers=True)
 
     net.eval()
 
