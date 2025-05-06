@@ -118,8 +118,8 @@ def train(args):
     max_acc = -1
     timestamp_in_max = None
 
-    for epoch in range(args.epochs):
-        for it, data in tqdm(enumerate(vad_dataloader), total=len(vad_dataloader)):
+    for epoch in tqdm(range(args.epochs)):
+        for it, data in enumerate(vad_dataloader):
             video, obj, temp_labels, spat_labels, t_flag = data['video'], data['obj'], data['label'], data["trans_label"], data["temporal"]
             n_temp = t_flag.sum().item()
             if args.debug_data:
@@ -154,8 +154,7 @@ def train(args):
 
             global_step += 1
 
-            if True:
-                # if global_step % args.val_step == 0 and epoch >= 5:
+            if global_step % args.val_step == 0 and epoch >= 5:
                 smoothed_auc, smoothed_auc_avg, temp_timestamp = val(args, testing_data_loader, net)
                 writer.add_scalar('Test/smoothed_auc', smoothed_auc, global_step=global_step)
                 writer.add_scalar('Test/smoothed_auc_avg', smoothed_auc_avg, global_step=global_step)
