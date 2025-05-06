@@ -7,7 +7,7 @@ class WideBranchNet(nn.Module):
 
     def __init__(self, time_length=7, num_classes=[127, 8]):
         super(WideBranchNet, self).__init__()
-        
+
         self.time_length = time_length
         self.num_classes = num_classes
         self.model = nn.Sequential(
@@ -40,7 +40,7 @@ class WideBranchNet(nn.Module):
             nn.InstanceNorm2d(64),
             nn.ReLU(),
             nn.Dropout2d(p=0.3)
-            )
+        )
         self.max2d = nn.MaxPool2d(2, 2)
         self.classifier_1 = nn.Sequential(
             nn.Linear(1024, 512),
@@ -52,8 +52,7 @@ class WideBranchNet(nn.Module):
             nn.ReLU(),
             nn.Linear(512, self.num_classes[1])
         )
-        
-    
+
     def forward(self, x):
         out = self.model(x)
         out = out.squeeze(2)
@@ -62,6 +61,22 @@ class WideBranchNet(nn.Module):
         out1 = self.classifier_1(out)
         out2 = self.classifier_2(out)
         return out1, out2
+
+
+class WideBranchNet_Strided(WideBranchNet):
+    def __init__(self, time_length=7, stride=2, nb_patches=9):
+        self.stride = stride
+        self.original_time_length = time_length
+        self.time_length = (time_length + stride-1)//stride
+        self.nb_patches = nb_patches
+        super().__init__(self.time_length, [self.time_length**2, nb_patches**2])
+
+    def forward(self, x):
+        x = x[:, :, ::self.stride]  # B, C, T, H, W
+        return super().forward(x)
+
+    def transform_label(self, temp, temp_teacher=None):
+        return temp[:, ::self.stride]//self.stride, temp_teacher.view(-1, self.original_time_length, self.original_time_length)[:, ::self.stride, ::self.stride].view(-1, self.time_length**2) if temp_teacher is not None else None
 
 
 if __name__ == '__main__':

@@ -25,7 +25,8 @@ class VideoAnomalyDataset_C3D(Dataset):
                  frame_num=7,
                  static_threshold=0.1,
                  sample_step=None,
-                 cache=False):
+                 cache=False,
+                 model_stride=1):
 
         assert os.path.exists(data_dir), "{} does not exist.".format(data_dir)
         assert dataset in ['shanghaitech', 'ped2', 'avenue'], 'wrong type of dataset.'
@@ -35,6 +36,7 @@ class VideoAnomalyDataset_C3D(Dataset):
         self.data_dir = data_dir
         self.fliter_ratio = fliter_ratio
         self.static_threshold = static_threshold
+        self.model_stride = model_stride
         file_list = os.listdir(data_dir)
         file_list.sort()
 
@@ -125,13 +127,23 @@ class VideoAnomalyDataset_C3D(Dataset):
     def __getitem__(self, idx):
         temproal_flag = idx % 2 == 0
         record = self.objects_list[idx]
-        if self.test_stage:
+        if self.test_stage or not temproal_flag:
             perm = np.arange(self.frame_num)
         else:
             if random.random() < 0.0001:
                 perm = np.arange(self.frame_num)
             else:
-                perm = np.random.permutation(self.frame_num)
+                if self.model_stride == 1:
+                    perm = np.random.permutation(self.frame_num)
+                else:  # We force images TODO
+                    idx_all = np.arange(self.frame_num)
+                    mask = np.zeros(self.frame_num, dtype=bool)
+                    mask[::self.model_stride] = True
+
+                    perm = np.empty_like(idx_all)
+                    perm[mask] = np.random.permutation(idx_all[mask])
+                    perm[~mask] = np.random.permutation(idx_all[~mask])
+
         obj = self.get_object(record["video_name"], record["frame"], record["object"])
 
         if not temproal_flag and not self.test_stage:
@@ -153,7 +165,6 @@ class VideoAnomalyDataset_C3D(Dataset):
         if temproal_flag:
             obj = obj[:, perm, :, :]
         obj = torch.clamp(obj, 0., 1.)
-
         ret = {"video": record["video_name"], "frame": record["frame"], "obj": obj, "label": perm,
                "trans_label": spatial_perm, "loc": record["loc"], "aspect_ratio": record["aspect_ratio"], "temporal": temproal_flag}
         return ret

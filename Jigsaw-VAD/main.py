@@ -33,7 +33,7 @@ def get_configs():
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--static_threshold", type=float, default=0.3)
-    parser.add_argument("--sample_num", type=int, default=5)
+    parser.add_argument("--sample_num", type=int, default=5, help="Time length of a window")
     parser.add_argument("--filter_ratio", type=float, default=0.8)
     parser.add_argument("--checkpoint", type=str, default=None)
     parser.add_argument("--dataset", type=str, default="shanghaitech", choices=['shanghaitech', 'ped2', 'avenue'])
@@ -41,6 +41,8 @@ def get_configs():
     parser.add_argument("--prefetch", type=int, default=None)
     parser.add_argument("--cache", action="store_true")
     parser.add_argument("--sample_step", type=int, default=1, help="Step size for sampling frames during testing")
+    parser.add_argument("--model_stride", type=int, default=1, help="sampling rate of the model (do not impact the sample num)")
+
     args = parser.parse_args()
 
     args.device = torch.device("cuda:{}".format(args.gpu_id) if torch.cuda.is_available() else "cpu")
@@ -70,10 +72,15 @@ def train(args):
                                           fliter_ratio=args.filter_ratio,
                                           frame_num=args.sample_num,
                                           static_threshold=args.static_threshold,
-                                          cache=args.cache)
+                                          cache=args.cache,
+                                          model_stride=args.model_stride)
 
-    vad_dataloader = DataLoader(vad_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=True, prefetch_factor=args.prefetch if args.workers > 0 else None)
+    vad_dataloader = DataLoader(vad_dataset, batch_size=args.batch_size, shuffle=True,
+                                num_workers=args.workers, pin_memory=True, prefetch_factor=args.prefetch if args.workers > 0 else None,
+                                )
     net = model.WideBranchNet(time_length=args.sample_num, num_classes=[args.sample_num ** 2, 81])
+    if args.model_stride > 1:
+        net = model.WideBranchNet_Strided(time_length=args.sample_num, stride=args.model_stride, nb_patches=9)
 
     if args.checkpoint is not None:
         state = torch.load(args.checkpoint, map_location=args.device)
@@ -106,16 +113,18 @@ def train(args):
             if args.debug_data:
                 continue
             obj = obj.cuda(args.device, non_blocking=True)
+
+            if args.model_stride > 1:
+                temp_labels, _ = net.transform_label(temp_labels)
+
             temp_labels = temp_labels[t_flag].long().view(-1).cuda(args.device)
             spat_labels = spat_labels[~t_flag].long().view(-1).cuda(args.device)
 
             temp_logits, spat_logits = net(obj)
-            temp_logits = temp_logits[t_flag].view(-1, args.sample_num)
+            temp_logits = temp_logits[t_flag].view(-1, net.time_length)
             spat_logits = spat_logits[~t_flag].view(-1, 9)
-
             temp_loss = criterion(temp_logits, temp_labels)
             spat_loss = criterion(spat_logits, spat_labels)
-
             loss = temp_loss + spat_loss
 
             optimizer.zero_grad()
@@ -177,7 +186,7 @@ def val(args, net=None):
 
         with torch.no_grad():
             temp_logits, spat_logits = net(obj)
-            temp_logits = temp_logits.view(-1, args.sample_num, args.sample_num)
+            temp_logits = temp_logits.view(-1, net.time_length, net.time_length)
             spat_logits = spat_logits.view(-1, 9, 9)
 
         spat_probs = F.softmax(spat_logits, -1)
@@ -219,4 +228,5 @@ if __name__ == '__main__':
     args = get_configs()
     train(args)
     # python main.py --dataset avenue --val_step 100 --print_interval 20 --batch_size 192 --sample_num 7 --epochs 100 --static_threshold 0.2
+    # python main.py --dataset avenue --val_step 100 --print_interval 20 --batch_size 192 --sample_num 7 --epochs 3 --static_threshold 0.2 --debug_data
     # python main.py --dataset avenue --sample_num 7 --checkpoint ../avenue_92.18.pth --sample_step 10
