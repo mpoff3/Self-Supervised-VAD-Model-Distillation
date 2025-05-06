@@ -1,3 +1,4 @@
+from functools import lru_cache
 import os
 from numpy.random import f, permutation, rand
 from PIL import Image
@@ -23,11 +24,13 @@ class VideoAnomalyDataset_C3D(Dataset):
                  fliter_ratio=0.9,
                  frame_num=7,
                  static_threshold=0.1,
-                 sample_step=None):
+                 sample_step=None,
+                 cache=False):
 
         assert os.path.exists(data_dir), "{} does not exist.".format(data_dir)
         assert dataset in ['shanghaitech', 'ped2', 'avenue'], 'wrong type of dataset.'
 
+        self.cache = cache
         self.dataset = dataset
         self.data_dir = data_dir
         self.fliter_ratio = fliter_ratio
@@ -155,9 +158,16 @@ class VideoAnomalyDataset_C3D(Dataset):
                "trans_label": spatial_perm, "loc": record["loc"], "aspect_ratio": record["aspect_ratio"], "temporal": temproal_flag}
         return ret
 
+    @lru_cache(maxsize=100000)
+    def np_cache_load(self, path):
+        return np.load(path)
+
     def get_object(self, video_name, frame, obj_id):
         video_dir = os.path.join(DATA_DIR, f"{self.dataset}_patches", self.phase, video_name)
-        obj = np.load(os.path.join(video_dir, str(frame) + '_' + str(obj_id) + '.npy'))   # (3, 7, 64, 64)
+        if self.cache:
+            obj = self.np_cache_load(os.path.join(video_dir, str(frame) + '_' + str(obj_id) + '.npy'))   # (3, 7, 64, 64)
+        else:
+            obj = np.load(os.path.join(video_dir, str(frame) + '_' + str(obj_id) + '.npy'))   # (3, 7, 64, 64)
         if not self.test_stage:
             if random.random() < 0.5:
                 obj = obj[:, :, :, ::-1]

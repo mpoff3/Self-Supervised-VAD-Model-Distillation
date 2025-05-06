@@ -39,6 +39,7 @@ def get_configs():
     parser.add_argument("--dataset", type=str, default="shanghaitech", choices=['shanghaitech', 'ped2', 'avenue'])
     parser.add_argument("--debug_data", action="store_true")
     parser.add_argument("--prefetch", type=int, default=None)
+    parser.add_argument("--cache", action="store_true")
     parser.add_argument("--sample_step", type=int, default=1, help="Step size for sampling frames during testing")
     args = parser.parse_args()
 
@@ -68,7 +69,8 @@ def train(args):
                                           detect_dir=detect_pkl,
                                           fliter_ratio=args.filter_ratio,
                                           frame_num=args.sample_num,
-                                          static_threshold=args.static_threshold)
+                                          static_threshold=args.static_threshold,
+                                          cache=args.cache)
 
     vad_dataloader = DataLoader(vad_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=True, prefetch_factor=args.prefetch if args.workers > 0 else None)
     net = model.WideBranchNet(time_length=args.sample_num, num_classes=[args.sample_num ** 2, 81])
