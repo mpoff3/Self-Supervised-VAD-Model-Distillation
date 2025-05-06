@@ -87,7 +87,7 @@ def train(args):
                                               sample_step=args.sample_step,
                                               frame_num=args.sample_num)
 
-    testing_data_loader = DataLoader(testing_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, drop_last=False,
+    testing_data_loader = DataLoader(testing_dataset, batch_size=args.batch_size, shuffle=False, num_workers=(args.workers+1)//2, drop_last=False,
                                      prefetch_factor=args.prefetch if args.workers > 0 else None, persistent_workers=True if args.workers > 0 else False, pin_memory=True)
 
     net = model.WideBranchNet(time_length=args.sample_num, num_classes=[args.sample_num ** 2, 81])
