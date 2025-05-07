@@ -149,7 +149,7 @@ def train(args):
 
             if (global_step + 1) % args.print_interval == 0:
                 print("[{}:{}/{}]\tloss: {:.6f} t_loss: {:.6f} s_loss: {:.6f} \ttime: {:.6f}".
-                      format(epoch, it + 1, len(vad_dataloader), loss.item(), temp_loss.item(), spat_loss.item(),  time.time() - t0))
+                      format(epoch, it + 1, len(vad_dataloader), loss.item(), temp_loss.item(), spat_loss.item(),  time.time() - t0), flush=True)
                 t0 = time.time()
 
             global_step += 1
@@ -164,7 +164,11 @@ def train(args):
                     timestamp_in_max = temp_timestamp
                     save = '{}_{}.pth'.format('best', running_date)
                     os.makedirs(args.out_checkpoints, exist_ok=True)
-                    torch.save(net.state_dict(), os.path.join(args.out_checkpoints, save))
+                    # torch.save(net.state_dict(), os.path.join(args.out_checkpoints, save))
+                    with open(os.path.join(args.out_checkpoints, save), 'wb') as f:
+                        torch.save(net.state_dict(), f)
+                        f.flush()
+                        os.fsync(f.fileno())
 
                 print('cur max: ' + str(max_acc) + ' in ' + timestamp_in_max)
                 net = net.train()
