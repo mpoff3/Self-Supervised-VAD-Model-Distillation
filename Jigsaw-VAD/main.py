@@ -221,8 +221,8 @@ def save_and_evaluate(video_output, running_date, dataset='shanghaitech'):
         video_output_spatial, video_output_temporal, video_output_complete = remake_video_output(video_output, dataset=dataset)
     else:
         video_output_spatial, video_output_temporal, video_output_complete = remake_video_3d_output(video_output, dataset=dataset)
-    evaluate_auc(video_output_spatial, dataset=dataset)
-    evaluate_auc(video_output_temporal, dataset=dataset)
+    # evaluate_auc(video_output_spatial, dataset=dataset)
+    # evaluate_auc(video_output_temporal, dataset=dataset)
     smoothed_res, smoothed_auc_list = evaluate_auc(video_output_complete, dataset=dataset)
     return smoothed_res.auc, np.mean(smoothed_auc_list)
 
