@@ -216,7 +216,7 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
         assert frame_scores.size == video_length[video]
         frame_scores -= frame_scores.min()
         frame_scores /= frame_scores.max()
-        plot_score(frame_scores)
+        # plot_score(frame_scores)
         return_output_complete.append(frame_scores)
 
     return None, None, return_output_complete
