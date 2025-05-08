@@ -240,7 +240,10 @@ class GroundTruthLoader(object):
         root = f'{DATA_DIR}{dataset}_testing_label_mask'
         assert dataset in self.mapping, 'there is no dataset named {} \n Please check {}' \
             .format(dataset, GroundTruthLoader.NAME_MAT_MAPPING.keys())
-
+        if os.path.exists(os.path.join(root, 'label.pkl')):
+            with open(os.path.join(root, 'label.pkl'), 'rb') as f:
+                gt = pickle.load(f)
+            return gt
         num_video = 21
         dataset_video_folder = GroundTruthLoader.NAME_FRAMES_MAPPING[dataset]
         video_list = [os.path.splitext(file)[0] for file in os.listdir(dataset_video_folder)]
@@ -249,28 +252,15 @@ class GroundTruthLoader(object):
         assert num_video == len(video_list), 'ground true does not match the number of testing videos. {} != {}' \
             .format(num_video, len(video_list))
 
-        # get the total frames of sub video
-        def get_video_length(sub_video_number):
-            # video_name = video_name_template.format(sub_video_number)
-            video_name = os.path.join(dataset_video_folder, video_list[sub_video_number])
-            assert os.path.isdir(video_name), '{} is not directory!'.format(video_name)
-
-            length = len(os.listdir(video_name))
-
-            return length
-
         # need to test [].append, or np.array().append(), which one is faster
         gt = []
         for i in range(num_video):
-            length = get_video_length(i)
-
-            # sub_video_gt = np.zeros((length,), dtype=np.int8)
-
             mat_path = os.path.join(root, str(int(video_list[i])) + '_label.mat')
             sub_video_gt = np.stack(scio.loadmat(mat_path)['volLabel'][0]).max((1, 2))
-
             gt.append(sub_video_gt)
 
+        with open(os.path.join(root, 'label.pkl'), 'wb') as f:
+            pickle.dump(gt, f)
         return gt
 
     @staticmethod
