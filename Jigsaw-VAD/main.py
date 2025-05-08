@@ -43,6 +43,7 @@ def get_configs():
     parser.add_argument("--sample_step", type=int, default=1, help="Step size for sampling frames during testing")
     parser.add_argument("--model_stride", type=int, default=1, help="sampling rate of the model (do not impact the sample num)")
     parser.add_argument("--out_checkpoints", type=str, default='./checkpoint', help="out folder for the checkpoints")
+    parser.add_argument("--model_config", type=str, default='B', help=f"Configuration of the network among the predone config: {list(model.MODEL_CONFIGS.keys())}")
 
     args = parser.parse_args()
 
@@ -90,14 +91,17 @@ def train(args):
     testing_data_loader = DataLoader(testing_dataset, batch_size=args.batch_size, shuffle=False, num_workers=(args.workers+1)//2, drop_last=False,
                                      prefetch_factor=args.prefetch if args.workers > 0 else None, persistent_workers=True if args.workers > 0 else False, pin_memory=True)
 
-    net = model.WideBranchNet(time_length=args.sample_num, num_classes=[args.sample_num ** 2, 81])
+    net = model.WideBranchNet(time_length=args.sample_num, num_classes=[args.sample_num ** 2, 81], variant=args.model_config)
     if args.model_stride > 1:
-        net = model.WideBranchNet_Strided(time_length=args.sample_num, stride=args.model_stride, nb_patches=9)
+        net = model.WideBranchNet_Strided(time_length=args.sample_num, stride=args.model_stride, nb_patches=9, variant=args.model_config)
 
     if args.checkpoint is not None:
         state = torch.load(args.checkpoint, map_location=args.device)
         print('load ' + args.checkpoint)
-        net.load_state_dict(state, strict=True)
+        try:
+            net.load_state_dict(state, strict=True)
+        except Exception:
+            net.load_state_dict(model.flatten_state_dict(state, net.state_dict()), strict=True)
         net.to(args.device)
         smoothed_auc, smoothed_auc_avg, _ = val(args, testing_data_loader, net)
         exit(0)
@@ -232,6 +236,6 @@ if __name__ == '__main__':
         os.makedirs('checkpoint')
     args = get_configs()
     train(args)
-    # python main.py --dataset avenue --val_step 100 --print_interval 20 --batch_size 192 --sample_num 7 --epochs 100 --static_threshold 0.2
+    # python main.py --dataset avenue --val_step 100 --print_interval 20 --batch_size 192 --sample_num 7 --epochs 100 --static_threshold 0.2 --sample_step 4 --model_config Bv4
     # python main.py --dataset avenue --val_step 100 --print_interval 20 --batch_size 192 --sample_num 7 --epochs 3 --static_threshold 0.2 --debug_data
     # python main.py --dataset avenue --sample_num 7 --checkpoint ../avenue_92.18.pth --sample_step 10
