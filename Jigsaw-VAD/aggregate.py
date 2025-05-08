@@ -107,13 +107,30 @@ def load_objects(dataset, frame_num=7):
     return objects_list
 
 
-def remake_video_3d_output(video_output, dataset='ped2', frame_num=7):
-    object_list = load_objects(dataset, frame_num=frame_num)
+def display_video(vid):
+    def resize_longest_side(img, max_size=360):
+        h, w = img.shape[:2]
+        scale = max_size / max(h, w)
+        return cv2.resize(img, (int(w * scale), int(h * scale)))
+    import cv2
+    for frame in vid.transpose(2, 0, 1):
+        frame = resize_longest_side((np.clip(255*frame, 0, 255)).astype(np.uint8))
+        cv2.imshow("Video", frame)
+        if cv2.waitKey(15) & 0xFF == ord('q'):
+            break
+    cv2.destroyAllWindows()
 
+
+def plot_score(score):
+    import matplotlib.pyplot as plt
+    plt.plot(score)
+    plt.show()
+
+
+def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_step=1):
+    object_list = load_objects(dataset, frame_num=frame_num)
     video_length = video_label_length(dataset=dataset)
 
-    return_output_spatial = []
-    return_output_temporal = []
     return_output_complete = []
 
     if dataset == 'ped2':
@@ -133,6 +150,10 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7):
         video = video_l[i]
         frame_record = video_output[video]
         frame_l = sorted(list(frame_record.keys()))
+
+        if frame_l[1]-frame_l[0] == 1:
+            frame_l = frame_l[::sample_step]
+        assert frame_l[1]-frame_l[0] == sample_step, f'Sample step do not match (if you are giving a fully evaluated and a different sample step it should work)'
 
         block_h = int(round(video_height / block_scale))
         block_w = int(round(video_width / block_scale))
@@ -164,16 +185,22 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7):
                 local_min2_ = min(score2_, local_min2_)
 
                 cnt += 1
-
         # spatial
         video_ = (video_ - local_min_) / (local_max_ - local_min_)
-
         # temporal
         video2_ = (video2_ - local_min2_) / (local_max2_ - local_min2_)
 
         score = np.stack((video_, video2_))
         score = torch.from_numpy(score).unsqueeze(1)
         score = score.permute((0, 1, 4, 2, 3)).float().to(device)
+        # display_video(score.cpu().numpy().mean(axis=0)[0].transpose(1, 2, 0))
+        if sample_step > 1:
+            kernel_size = sample_step  # *2? i think it works better
+            pad_front = (kernel_size - 1) // 2
+            pad_back = (kernel_size - 1) - pad_front
+            score = F.pad(score, (0, 0, 0, 0, pad_front, pad_back), mode='constant', value=1)
+            score = -F.max_pool3d(-score, (kernel_size, 1, 1), stride=(1, 1, 1), padding=0)
+            # display_video(score.cpu().numpy().mean(axis=0)[0].transpose(1, 2, 0))
         # padding
         p3d = (dim // 2, dim // 2, dim // 2, dim // 2, dim // 2, dim // 2)
         score_padding = F.pad(score, p3d, mode='constant', value=1)
@@ -183,29 +210,16 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7):
 
         video_ = score_3d[0]
         video2_ = score_3d[1]
+        # display_video((video_+video2_)/2)
 
-        frame_scores = np.ones(video_length[video])
-        frame_scores2 = np.ones(video_length[video])
-        frame_scores3 = np.ones(video_length[video])
-        for i in range(video_length[video]):
-            frame_scores[i] = 0.5 * video_[:, :, i].min() + 0.5 * video2_[:, :, i].min()
-            frame_scores2[i] = video_[:, :, i].min()
-            frame_scores3[i] = video2_[:, :, i].min()
-
+        frame_scores = video_.min(axis=(0, 1)) + video2_.min(axis=(0, 1))
+        assert frame_scores.size == video_length[video]
         frame_scores -= frame_scores.min()
         frame_scores /= frame_scores.max()
-
-        frame_scores2 -= frame_scores2.min()
-        frame_scores2 /= frame_scores2.max()
-
-        frame_scores3 -= frame_scores3.min()
-        frame_scores3 /= frame_scores3.max()
-
+        plot_score(frame_scores)
         return_output_complete.append(frame_scores)
-        return_output_spatial.append(frame_scores2)
-        return_output_temporal.append(frame_scores3)
 
-    return return_output_spatial, return_output_temporal, return_output_complete
+    return None, None, return_output_complete
 
 
 def gaussian_filter_(support, sigma):
@@ -273,16 +287,21 @@ if __name__ == '__main__':
     parser.add_argument('--file', default=None, type=str, help='pkl file')
     parser.add_argument('--dataset', default='ped2', type=str)
     parser.add_argument('--frame_num', required=True, type=int)
+    parser.add_argument('--sample_step', default=1, type=int)
 
     args = parser.parse_args()
 
     with open(args.file, 'rb') as f:
         output = pickle.load(f)
+    # print(*((u, len(v)) for u, v in output['01'].items()))
+    # exit()
     if args.dataset == 'shanghaitech':
         video_output_spatial, video_output_temporal, video_output_complete = remake_video_output(output, dataset=args.dataset)
     else:
-        video_output_spatial, video_output_temporal, video_output_complete = remake_video_3d_output(output, dataset=args.dataset, frame_num=args.frame_num)
+        _, _, video_output_complete = remake_video_3d_output(output, dataset=args.dataset, frame_num=args.frame_num, sample_step=args.sample_step)
 
-    evaluate_auc(video_output_spatial, dataset=args.dataset)
-    evaluate_auc(video_output_temporal, dataset=args.dataset)
+    # evaluate_auc(video_output_spatial, dataset=args.dataset)
+    # evaluate_auc(video_output_temporal, dataset=args.dataset)
+
     evaluate_auc(video_output_complete,  dataset=args.dataset)
+    # python aggregate.py --file log/video_output_ori_2025-05-08-13-59-00.pkl --dataset avenue --frame_num 7--sample_step 2

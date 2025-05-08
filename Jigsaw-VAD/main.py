@@ -213,18 +213,18 @@ def val(args, testing_data_loader, net=None):
                 video_output[video_][frame_] = []
             video_output[video_][frame_].append([s_score_, t_score_])
 
-    micro_auc, macro_auc = save_and_evaluate(video_output, running_date, dataset=args.dataset)
+    micro_auc, macro_auc = save_and_evaluate(video_output, running_date, dataset=args.dataset, sample_step=args.sample_step)
     return micro_auc, macro_auc, running_date
 
 
-def save_and_evaluate(video_output, running_date, dataset='shanghaitech'):
+def save_and_evaluate(video_output, running_date, dataset='shanghaitech', sample_step=1):
     pickle_path = './log/video_output_ori_{}.pkl'.format(running_date)
     with open(pickle_path, 'wb') as write:
         pickle.dump(video_output, write, pickle.HIGHEST_PROTOCOL)
     if dataset == 'shanghaitech':
         video_output_spatial, video_output_temporal, video_output_complete = remake_video_output(video_output, dataset=dataset)
     else:
-        video_output_spatial, video_output_temporal, video_output_complete = remake_video_3d_output(video_output, dataset=dataset)
+        _, _, video_output_complete = remake_video_3d_output(video_output, dataset=dataset, sample_step=sample_step)
     # evaluate_auc(video_output_spatial, dataset=dataset)
     # evaluate_auc(video_output_temporal, dataset=dataset)
     smoothed_res, smoothed_auc_list = evaluate_auc(video_output_complete, dataset=dataset)
@@ -238,4 +238,4 @@ if __name__ == '__main__':
     train(args)
     # python main.py --dataset avenue --val_step 100 --print_interval 20 --batch_size 192 --sample_num 7 --epochs 100 --static_threshold 0.2 --sample_step 4 --model_config Bv4
     # python main.py --dataset avenue --val_step 100 --print_interval 20 --batch_size 192 --sample_num 7 --epochs 3 --static_threshold 0.2 --debug_data
-    # python main.py --dataset avenue --sample_num 7 --checkpoint ../avenue_92.18.pth --sample_step 10
+    # python main.py --dataset avenue --sample_num 7 --checkpoint ../avenue_92.18.pth --sample_step 1
