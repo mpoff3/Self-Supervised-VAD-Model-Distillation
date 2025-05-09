@@ -157,7 +157,7 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
             - 'none': No filtering
         **kwargs: Additional arguments passed to interpolation and filter methods
     """
-    object_list = load_objects(dataset, frame_num=frame_num)
+    object_list = load_objects(dataset, frame_num=frame_num, loadasdicdic=True)
     video_length = video_label_length(dataset=dataset)
 
     return_output_complete = []
@@ -178,6 +178,7 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
     for i in range(len(video_l)):
         video = video_l[i]
         frame_record = video_output[video]
+        object_video = object_list[video]
         frame_l = sorted(list(frame_record.keys()))
         if frame_l[1]-frame_l[0] == 1:
             frame_l = frame_l[::sample_step]
@@ -193,8 +194,9 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
         local_min2_ = 1
         for fno in frame_l:
             object_record = frame_record[fno]
-            for score_, score2_ in object_record:
-                loc_V3 = object_list[cnt]['loc']
+            object_frame = object_video[fno]
+            for i, (score_, score2_) in enumerate(object_record):
+                loc_V3 = object_frame[i]
                 loc_V3 = (np.round(loc_V3 / block_scale)).astype(np.int32)
 
                 video_[loc_V3[1]: loc_V3[3] + 1, loc_V3[0]: loc_V3[2] + 1, fno] = \
@@ -226,12 +228,12 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
             if interpolation_method not in INTERPOLATION_METHODS:
                 raise ValueError(f"Unknown interpolation method: {interpolation_method}. Available methods: {list(INTERPOLATION_METHODS.keys())}")
             score = INTERPOLATION_METHODS[interpolation_method](score, sample_step, **kwargs)
-        
+
         # Apply 3D filter
         if filter_method not in FILTER_METHODS:
             raise ValueError(f"Unknown filter method: {filter_method}. Available methods: {list(FILTER_METHODS.keys())}")
         score_3d = FILTER_METHODS[filter_method](score, dim=dim, **kwargs)
-        
+
         score_3d = score_3d.cpu().numpy()
         score_3d = score_3d.transpose(0, 1, 3, 4, 2).squeeze()
 
@@ -314,18 +316,18 @@ if __name__ == '__main__':
     parser.add_argument('--frame_num', required=True, type=int)
     parser.add_argument('--sample_step', default=1, type=int)
     parser.add_argument('--interpolation_method', type=str, default='max_pool',
-                      choices=['max_pool', 'linear', 'nearest', 'gaussian', 'moving_avg', 'none'],
-                      help='Method to use for interpolating scores when sample_step > 1')
+                        choices=['max_pool', 'linear', 'nearest', 'gaussian', 'moving_avg', 'none'],
+                        help='Method to use for interpolating scores when sample_step > 1')
     parser.add_argument('--filter_method', type=str, default='mean',
-                      choices=['mean', 'gaussian', 'median', 'bilateral', 'none'],
-                      help='Method to use for 3D filtering of scores')
+                        choices=['mean', 'gaussian', 'median', 'bilateral', 'none'],
+                        help='Method to use for 3D filtering of scores')
     # Additional parameters for filtering and interpolation
     parser.add_argument('--gaussian_sigma', type=float, default=0.5,
-                      help='Sigma parameter for Gaussian interpolation/filtering')
+                        help='Sigma parameter for Gaussian interpolation/filtering')
     parser.add_argument('--bilateral_sigma_space', type=float, default=1.0,
-                      help='Spatial sigma for bilateral filtering')
+                        help='Spatial sigma for bilateral filtering')
     parser.add_argument('--bilateral_sigma_intensity', type=float, default=0.1,
-                      help='Intensity sigma for bilateral filtering')
+                        help='Intensity sigma for bilateral filtering')
 
     args = parser.parse_args()
 
@@ -342,9 +344,9 @@ if __name__ == '__main__':
             'bilateral_sigma_intensity': args.bilateral_sigma_intensity
         }
         _, _, video_output_complete = remake_video_3d_output(
-            output, 
-            dataset=args.dataset, 
-            frame_num=args.frame_num, 
+            output,
+            dataset=args.dataset,
+            frame_num=args.frame_num,
             sample_step=args.sample_step,
             interpolation_method=args.interpolation_method,
             filter_method=args.filter_method,
@@ -355,3 +357,16 @@ if __name__ == '__main__':
     evaluate_auc(video_output_complete, dataset=args.dataset)
     # Example usage:
     # python aggregate.py --file log/video_output_ori_2025-05-08-13-59-00.pkl --dataset avenue --frame_num 7 --sample_step 2 --interpolation_method gaussian --filter_method bilateral --gaussian_sigma 0.8 --bilateral_sigma_space 1.5 --bilateral_sigma_intensity 0.2
+
+    L_steps = list(range(1, 10))+[10, 12, 15, 20, 25, 30, 40, 50, 70, 100, 150]
+    # L_steps = [1, 2]
+    L_auc = []
+    for sample_step in L_steps:
+        _, _, video_output_complete = remake_video_3d_output(output, dataset=args.dataset, frame_num=args.frame_num, sample_step=sample_step)
+        record, auc = evaluate_auc(video_output_complete,  dataset=args.dataset)
+        L_auc.append([record.auc, auc[0]])
+    L_auc = np.array(L_auc)
+    import matplotlib.pyplot as plt
+    plt.plot(L_steps, L_auc[:, 0])
+    plt.plot(L_steps, L_auc[:, 1])
+    plt.show()
