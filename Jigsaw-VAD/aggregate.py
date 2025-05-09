@@ -50,7 +50,7 @@ def score_smoothing(score, ws=43, function='mean', sigma=10):
     return new_score
 
 
-def load_objects(dataset, frame_num=7):
+def load_objects(dataset, frame_num=7, loadasdicdic=False):
     root = DATA_DIR
     data_dir = os.path.join(root, f'{dataset}_frames', 'testing')
 
@@ -65,7 +65,7 @@ def load_objects(dataset, frame_num=7):
     elif dataset == 'avenue':
         filter_ratio = 0.8
 
-    objects_list = []
+    objects_list = [] if not loadasdicdic else {}
     videos_list = []
 
     total_frames = 0
@@ -96,7 +96,10 @@ def load_objects(dataset, frame_num=7):
             for i in range(object_num):
                 if not is_contain[i]:
                     if not is_small[i]:
-                        objects_list.append({"video_name": video_file, "frame": frame, "object": i, "loc": detect_result[i, :4]})
+                        if loadasdicdic:
+                            objects_list.setdefault(video_file, {}).setdefault(frame, []).append(detect_result[i, :4])
+                        else:
+                            objects_list.append({"video_name": video_file, "frame": frame, "object": i, "loc": detect_result[i, :4]})
                     else:
                         total_small_ += 1
                 else:
@@ -128,7 +131,7 @@ def plot_score(score):
 
 
 def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_step=1):
-    object_list = load_objects(dataset, frame_num=frame_num)
+    object_list = load_objects(dataset, frame_num=frame_num, loadasdicdic=True)
     video_length = video_label_length(dataset=dataset)
 
     return_output_complete = []
@@ -149,6 +152,7 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
     for i in range(len(video_l)):
         video = video_l[i]
         frame_record = video_output[video]
+        object_video = object_list[video]
         frame_l = sorted(list(frame_record.keys()))
         if frame_l[1]-frame_l[0] == 1:
             frame_l = frame_l[::sample_step]
@@ -165,8 +169,9 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
         local_min2_ = 1
         for fno in frame_l:
             object_record = frame_record[fno]
-            for score_, score2_ in object_record:
-                loc_V3 = object_list[cnt]['loc']
+            object_frame = object_video[fno]
+            for obj, (score_, score2_) in enumerate(object_record):
+                loc_V3 = object_frame[obj]
                 loc_V3 = (np.round(loc_V3 / block_scale)).astype(np.int32)
 
                 video_[loc_V3[1]: loc_V3[3] + 1, loc_V3[0]: loc_V3[2] + 1, fno] = \
