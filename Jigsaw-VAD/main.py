@@ -31,6 +31,7 @@ def get_configs():
     parser.add_argument("--gpu_id", type=str, default=0)
     parser.add_argument("--log_date", type=str, default=None)
     parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--lr", type=float, default=0.0001)
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--static_threshold", type=float, default=0.3)
     parser.add_argument("--sample_num", type=int, default=5, help="Time length of a window")
@@ -110,7 +111,7 @@ def train(args):
     net = net.train()
 
     criterion = nn.CrossEntropyLoss(reduction='mean')
-    optimizer = optim.Adam(params=net.parameters(), lr=1e-4)
+    optimizer = optim.Adam(params=net.parameters(), lr=args.lr)
 
     # Train
     log_dir = './log/{}/'.format(running_date)
