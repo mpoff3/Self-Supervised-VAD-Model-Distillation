@@ -9,6 +9,9 @@ from scipy.ndimage import convolve
 import torch.nn.functional as F
 import torch
 import math
+from scipy.interpolate import interp1d
+from tool.interpolation import INTERPOLATION_METHODS
+from tool.filtering import FILTER_METHODS
 DATA_DIR = os.environ["VAD_DATASET_PATH"]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -130,8 +133,31 @@ def plot_score(score):
     plt.show()
 
 
-def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_step=1):
-    object_list = load_objects(dataset, frame_num=frame_num, loadasdicdic=True)
+def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_step=1, interpolation_method='max_pool', filter_method='mean', **kwargs):
+    """
+    Args:
+        video_output: Dictionary containing video frame scores
+        dataset: Dataset name ('ped2' or 'avenue')
+        frame_num: Number of frames in each sample
+        sample_step: Step size for sampling frames
+        interpolation_method: Method to use for interpolating scores when sample_step > 1
+            Options:
+            - 'max_pool': Use max pooling (current method)
+            - 'linear': Linear interpolation between available frames
+            - 'nearest': Nearest neighbor interpolation
+            - 'gaussian': Gaussian weighted interpolation
+            - 'moving_avg': Simple moving average
+            - 'none': No interpolation, leave missing frames as 1
+        filter_method: Method to use for 3D filtering
+            Options:
+            - 'mean': 3D mean filter
+            - 'gaussian': 3D Gaussian filter
+            - 'median': 3D median filter
+            - 'bilateral': 3D bilateral filter
+            - 'none': No filtering
+        **kwargs: Additional arguments passed to interpolation and filter methods
+    """
+    object_list = load_objects(dataset, frame_num=frame_num)
     video_length = video_label_length(dataset=dataset)
 
     return_output_complete = []
@@ -152,11 +178,9 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
     for i in range(len(video_l)):
         video = video_l[i]
         frame_record = video_output[video]
-        object_video = object_list[video]
         frame_l = sorted(list(frame_record.keys()))
         if frame_l[1]-frame_l[0] == 1:
             frame_l = frame_l[::sample_step]
-        # assert len(frame_l) == 1 or frame_l[1]-frame_l[0] == sample_step, f'Sample step do not match (if you are giving a fully evaluated and a different sample step it should work)'
 
         block_h = int(round(video_height / block_scale))
         block_w = int(round(video_width / block_scale))
@@ -169,9 +193,8 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
         local_min2_ = 1
         for fno in frame_l:
             object_record = frame_record[fno]
-            object_frame = object_video[fno]
-            for obj, (score_, score2_) in enumerate(object_record):
-                loc_V3 = object_frame[obj]
+            for score_, score2_ in object_record:
+                loc_V3 = object_list[cnt]['loc']
                 loc_V3 = (np.round(loc_V3 / block_scale)).astype(np.int32)
 
                 video_[loc_V3[1]: loc_V3[3] + 1, loc_V3[0]: loc_V3[2] + 1, fno] = \
@@ -197,30 +220,28 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
         score = np.stack((video_, video2_))
         score = torch.from_numpy(score).unsqueeze(1)
         score = score.permute((0, 1, 4, 2, 3)).float().to(device)
-        # display_video(score.cpu().numpy().mean(axis=0)[0].transpose(1, 2, 0))
+
+        # Apply interpolation if sample_step > 1
         if sample_step > 1:
-            kernel_size = sample_step  # *2? i think it works better
-            pad_front = (kernel_size - 1) // 2
-            pad_back = (kernel_size - 1) - pad_front
-            score = F.pad(score, (0, 0, 0, 0, pad_front, pad_back), mode='constant', value=1)
-            score = -F.max_pool3d(-score, (kernel_size, 1, 1), stride=(1, 1, 1), padding=0)
-            # display_video(score.cpu().numpy().mean(axis=0)[0].transpose(1, 2, 0))
-        # padding
-        p3d = (dim // 2, dim // 2, dim // 2, dim // 2, dim // 2, dim // 2)
-        score_padding = F.pad(score, p3d, mode='constant', value=1)
-        # 3d mean filter
-        score_3d = F.avg_pool3d(score_padding, kernel_size=dim, stride=1, padding=0).cpu().numpy()
+            if interpolation_method not in INTERPOLATION_METHODS:
+                raise ValueError(f"Unknown interpolation method: {interpolation_method}. Available methods: {list(INTERPOLATION_METHODS.keys())}")
+            score = INTERPOLATION_METHODS[interpolation_method](score, sample_step, **kwargs)
+        
+        # Apply 3D filter
+        if filter_method not in FILTER_METHODS:
+            raise ValueError(f"Unknown filter method: {filter_method}. Available methods: {list(FILTER_METHODS.keys())}")
+        score_3d = FILTER_METHODS[filter_method](score, dim=dim, **kwargs)
+        
+        score_3d = score_3d.cpu().numpy()
         score_3d = score_3d.transpose(0, 1, 3, 4, 2).squeeze()
 
         video_ = score_3d[0]
         video2_ = score_3d[1]
-        # display_video((video_+video2_)/2)
 
         frame_scores = video_.min(axis=(0, 1)) + video2_.min(axis=(0, 1))
         assert frame_scores.size == video_length[video]
         frame_scores -= frame_scores.min()
         frame_scores /= frame_scores.max()
-        # plot_score(frame_scores)
         return_output_complete.append(frame_scores)
 
     return None, None, return_output_complete
@@ -292,6 +313,19 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', default='ped2', type=str)
     parser.add_argument('--frame_num', required=True, type=int)
     parser.add_argument('--sample_step', default=1, type=int)
+    parser.add_argument('--interpolation_method', type=str, default='max_pool',
+                      choices=['max_pool', 'linear', 'nearest', 'gaussian', 'moving_avg', 'none'],
+                      help='Method to use for interpolating scores when sample_step > 1')
+    parser.add_argument('--filter_method', type=str, default='mean',
+                      choices=['mean', 'gaussian', 'median', 'bilateral', 'none'],
+                      help='Method to use for 3D filtering of scores')
+    # Additional parameters for filtering and interpolation
+    parser.add_argument('--gaussian_sigma', type=float, default=0.5,
+                      help='Sigma parameter for Gaussian interpolation/filtering')
+    parser.add_argument('--bilateral_sigma_space', type=float, default=1.0,
+                      help='Spatial sigma for bilateral filtering')
+    parser.add_argument('--bilateral_sigma_intensity', type=float, default=0.1,
+                      help='Intensity sigma for bilateral filtering')
 
     args = parser.parse_args()
 
@@ -302,10 +336,22 @@ if __name__ == '__main__':
     if args.dataset == 'shanghaitech':
         video_output_spatial, video_output_temporal, video_output_complete = remake_video_output(output, dataset=args.dataset)
     else:
-        _, _, video_output_complete = remake_video_3d_output(output, dataset=args.dataset, frame_num=args.frame_num, sample_step=args.sample_step)
-
+        kwargs = {
+            'gaussian_sigma': args.gaussian_sigma,
+            'bilateral_sigma_space': args.bilateral_sigma_space,
+            'bilateral_sigma_intensity': args.bilateral_sigma_intensity
+        }
+        _, _, video_output_complete = remake_video_3d_output(
+            output, 
+            dataset=args.dataset, 
+            frame_num=args.frame_num, 
+            sample_step=args.sample_step,
+            interpolation_method=args.interpolation_method,
+            filter_method=args.filter_method,
+            **kwargs
+        )
     # evaluate_auc(video_output_spatial, dataset=args.dataset)
     # evaluate_auc(video_output_temporal, dataset=args.dataset)
-
-    evaluate_auc(video_output_complete,  dataset=args.dataset)
-    # python aggregate.py --file log/video_output_ori_2025-05-08-13-59-00.pkl --dataset avenue --frame_num 7--sample_step 2
+    evaluate_auc(video_output_complete, dataset=args.dataset)
+    # Example usage:
+    # python aggregate.py --file log/video_output_ori_2025-05-08-13-59-00.pkl --dataset avenue --frame_num 7 --sample_step 2 --interpolation_method gaussian --filter_method bilateral --gaussian_sigma 0.8 --bilateral_sigma_space 1.5 --bilateral_sigma_intensity 0.2

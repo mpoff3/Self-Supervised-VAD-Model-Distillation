@@ -45,6 +45,12 @@ def get_configs():
     parser.add_argument("--model_stride", type=int, default=1, help="sampling rate of the model (do not impact the sample num)")
     parser.add_argument("--out_checkpoints", type=str, default='./checkpoint', help="out folder for the checkpoints")
     parser.add_argument("--model_config", type=str, default='B', help=f"Configuration of the network among the predone config: {list(model.MODEL_CONFIGS.keys())}")
+    parser.add_argument('--interpolation_method', type=str, default='max_pool',
+                      choices=['max_pool', 'linear', 'nearest', 'gaussian', 'moving_avg', 'none'],
+                      help='Method to use for interpolating scores when sample_step > 1')
+    parser.add_argument('--filter_method', type=str, default='mean',
+                      choices=['mean', 'gaussian', 'median', 'bilateral', 'none'],
+                      help='Method to use for 3D filtering of scores')
 
     args = parser.parse_args()
 
@@ -214,20 +220,20 @@ def val(args, testing_data_loader, net=None):
                 video_output[video_][frame_] = []
             video_output[video_][frame_].append([s_score_, t_score_])
 
-    micro_auc, macro_auc = save_and_evaluate(video_output, running_date, dataset=args.dataset, sample_step=args.sample_step)
+    micro_auc, macro_auc = save_and_evaluate(video_output, running_date, dataset=args.dataset, sample_step=args.sample_step, interpolation_method=args.interpolation_method, filter_method=args.filter_method)
     return micro_auc, macro_auc, running_date
 
 
-def save_and_evaluate(video_output, running_date, dataset='shanghaitech', sample_step=1):
+def save_and_evaluate(video_output, running_date, dataset='shanghaitech', sample_step=1, interpolation_method='max_pool', filter_method='mean'):
     pickle_path = './log/video_output_ori_{}.pkl'.format(running_date)
     with open(pickle_path, 'wb') as write:
         pickle.dump(video_output, write, pickle.HIGHEST_PROTOCOL)
     if dataset == 'shanghaitech':
         video_output_spatial, video_output_temporal, video_output_complete = remake_video_output(video_output, dataset=dataset)
     else:
-        _, _, video_output_complete = remake_video_3d_output(video_output, dataset=dataset, sample_step=sample_step)
-    # evaluate_auc(video_output_spatial, dataset=dataset)
-    # evaluate_auc(video_output_temporal, dataset=dataset)
+        _, _, video_output_complete = remake_video_3d_output(video_output, dataset=dataset, sample_step=sample_step, 
+                                                           interpolation_method=interpolation_method, 
+                                                           filter_method=filter_method)
     smoothed_res, smoothed_auc_list = evaluate_auc(video_output_complete, dataset=dataset)
     return smoothed_res.auc, np.mean(smoothed_auc_list)
 
