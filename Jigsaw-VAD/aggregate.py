@@ -133,7 +133,7 @@ def plot_score(score):
     plt.show()
 
 
-def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_step=1, interpolation_method='max_pool', filter_method='mean', **kwargs):
+def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_step=1, interpolation_method='nearest', filter_method='mean', **kwargs):
     """
     Args:
         video_output: Dictionary containing video frame scores
@@ -142,10 +142,8 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
         sample_step: Step size for sampling frames
         interpolation_method: Method to use for interpolating scores when sample_step > 1
             Options:
-            - 'max_pool': Use max pooling (current method)
-            - 'linear': Linear interpolation between available frames
             - 'nearest': Nearest neighbor interpolation
-            - 'gaussian': Gaussian weighted interpolation
+            - 'linear': Linear interpolation between available frames
             - 'moving_avg': Simple moving average
             - 'none': No interpolation, leave missing frames as 1
         filter_method: Method to use for 3D filtering
@@ -223,12 +221,14 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
         score = torch.from_numpy(score).unsqueeze(1)
         score = score.permute((0, 1, 4, 2, 3)).float().to(device)
 
+        # display_video(score.cpu().numpy().mean(axis=0)[0].transpose(1, 2, 0))
         # Apply interpolation if sample_step > 1
         if sample_step > 1:
             if interpolation_method not in INTERPOLATION_METHODS:
                 raise ValueError(f"Unknown interpolation method: {interpolation_method}. Available methods: {list(INTERPOLATION_METHODS.keys())}")
             score = INTERPOLATION_METHODS[interpolation_method](score, sample_step, **kwargs)
 
+        # display_video(score.cpu().numpy().mean(axis=0)[0].transpose(1, 2, 0))
         # Apply 3D filter
         if filter_method not in FILTER_METHODS:
             raise ValueError(f"Unknown filter method: {filter_method}. Available methods: {list(FILTER_METHODS.keys())}")
@@ -239,6 +239,7 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
 
         video_ = score_3d[0]
         video2_ = score_3d[1]
+        # display_video((video_+video2_)/2)
 
         frame_scores = video_.min(axis=(0, 1)) + video2_.min(axis=(0, 1))
         assert frame_scores.size == video_length[video]
@@ -315,8 +316,8 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', default='ped2', type=str)
     parser.add_argument('--frame_num', required=True, type=int)
     parser.add_argument('--sample_step', default=1, type=int)
-    parser.add_argument('--interpolation_method', type=str, default='max_pool',
-                        choices=['max_pool', 'linear', 'nearest', 'gaussian', 'moving_avg', 'none'],
+    parser.add_argument('--interpolation_method', type=str, default='nearest',
+                        choices=['nearest', 'linear', '1+2D', 'moving_avg', 'none'],
                         help='Method to use for interpolating scores when sample_step > 1')
     parser.add_argument('--filter_method', type=str, default='mean',
                         choices=['mean', 'gaussian', 'median', 'bilateral', 'none'],
@@ -359,10 +360,9 @@ if __name__ == '__main__':
     # python aggregate.py --file log/video_output_ori_2025-05-08-13-59-00.pkl --dataset avenue --frame_num 7 --sample_step 2 --interpolation_method gaussian --filter_method bilateral --gaussian_sigma 0.8 --bilateral_sigma_space 1.5 --bilateral_sigma_intensity 0.2
 
     L_steps = list(range(1, 10))+[10, 12, 15, 20, 25, 30, 40, 50, 70, 100, 150]
-    # L_steps = [1, 2]
     L_auc = []
     for sample_step in L_steps:
-        _, _, video_output_complete = remake_video_3d_output(output, dataset=args.dataset, frame_num=args.frame_num, sample_step=sample_step)
+        _, _, video_output_complete = remake_video_3d_output(output, dataset=args.dataset, frame_num=args.frame_num, sample_step=sample_step, interpolation_method=args.interpolation_method, filter_method=args.filter_method)
         record, auc = evaluate_auc(video_output_complete,  dataset=args.dataset)
         L_auc.append([record.auc, auc[0]])
     L_auc = np.array(L_auc)
