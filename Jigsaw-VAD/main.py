@@ -236,6 +236,6 @@ if __name__ == '__main__':
         os.makedirs('checkpoint')
     args = get_configs()
     train(args)
-    # python main.py --dataset avenue --val_step 100 --print_interval 20 --batch_size 192 --sample_num 7 --epochs 100 --static_threshold 0.2 --sample_step 4 --model_config Bv4
+    # python main.py --dataset avenue --val_step 100 --print_interval 20 --batch_size 192 --sample_num 7 --epochs 100 --static_threshold 0.2 --sample_step 1 --model_config Mv6
     # python main.py --dataset avenue --val_step 100 --print_interval 20 --batch_size 192 --sample_num 7 --epochs 3 --static_threshold 0.2 --debug_data
     # python main.py --dataset avenue --sample_num 7 --checkpoint ../avenue_92.18.pth --sample_step 1

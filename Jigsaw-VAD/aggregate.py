@@ -152,7 +152,7 @@ def remake_video_3d_output(video_output, dataset='ped2', frame_num=7, sample_ste
         frame_l = sorted(list(frame_record.keys()))
         if frame_l[1]-frame_l[0] == 1:
             frame_l = frame_l[::sample_step]
-        assert len(frame_l) == 1 or frame_l[1]-frame_l[0] == sample_step, f'Sample step do not match (if you are giving a fully evaluated and a different sample step it should work)'
+        # assert len(frame_l) == 1 or frame_l[1]-frame_l[0] == sample_step, f'Sample step do not match (if you are giving a fully evaluated and a different sample step it should work)'
 
         block_h = int(round(video_height / block_scale))
         block_w = int(round(video_width / block_scale))

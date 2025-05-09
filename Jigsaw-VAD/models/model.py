@@ -2,15 +2,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-MODEL_CONFIGS = {
+MODEL_CONFIGS = {  # AUC, GMAC, Param
     # "XS": dict(channels=[8, 16, 16], fc_dim=128),
     # "S":  dict(channels=[16, 32, 32], fc_dim=256),
-    # "M":  dict(channels=[32, 64, 64], nb_conv=2, conv_type="2+1D", max_pool=True, bias=False, instance_norm=True),
-    "Bv2":  dict(channels=[32, 64, 64], nb_conv=2, conv_type="2+1D", max_pool=True, bias=False, instance_norm=True),
-    "Bv3":  dict(channels=[32, 64, 64], nb_conv=2, conv_type="1+2D", max_pool=True, bias=False, instance_norm=True),
-    "Bv4":  dict(channels=[32, 64, 64], nb_conv=1, conv_type="3D", max_pool=True, bias=False, instance_norm=True),
-    "Bv5":  dict(channels=[32, 64, 64], nb_conv=2, conv_type="3D", max_pool=False, bias=False, instance_norm=True),
-    "B":    dict(channels=[32, 64, 64], nb_conv=2, conv_type="3D", max_pool=True, bias=False, instance_norm=True),
+    "Mv1":  dict(channels=[16, 32, 32], nb_conv=2, conv_type="3D", max_pool=True, bias=False, instance_norm=True),      # ????, 638.56 MMac, Params: 410.29 k
+    "Mv2":  dict(channels=[16, 32, 32], nb_conv=2, conv_type="2+1D", max_pool=True, bias=False, instance_norm=True),    # ????, 320.99 MMac, Params: 354.13 k
+    "Mv3":  dict(channels=[16, 32, 32], nb_conv=1, conv_type="2+1D", max_pool=True, bias=False, instance_norm=True),    # ????, 118.34 MMac, Params: 326.48 k
+    "Mv4":  dict(channels=[16, 32, 32], nb_conv=1, conv_type="3D", max_pool=True, bias=False, instance_norm=True),      # ????, 190.42 MMac, Params: 348.08 k
+    "Mv5":  dict(channels=[16, 32, 32], nb_conv=2, conv_type="3D", max_pool=False, bias=False, instance_norm=True),     # ????, 300.99 MMac, Params: 410.29 k
+    "Mv6":  dict(channels=[16, 32, 32], nb_conv=1, conv_type="2+1D", max_pool=False, bias=False, instance_norm=True),   # ????, 29.92 MMac, Params: 326.48 k
+
+    "Bv2":  dict(channels=[32, 64, 64], nb_conv=2, conv_type="2+1D", max_pool=True, bias=False, instance_norm=True),    # 0.90, 1.24 GMac,      Params: 1.35 M
+    "Bv3":  dict(channels=[32, 64, 64], nb_conv=2, conv_type="1+2D", max_pool=True, bias=False, instance_norm=True),    # 0.88, 1.49 GMac,      Params: 1.37 M
+    "Bv4":  dict(channels=[32, 64, 64], nb_conv=1, conv_type="3D", max_pool=True, bias=False, instance_norm=True),      # 0.91, 679.82 MMac,    Params: 1.32 M
+    "Bv5":  dict(channels=[32, 64, 64], nb_conv=2, conv_type="3D", max_pool=False, bias=False, instance_norm=True),     # 0.91, 1.12 GMac,      Params: 1.57 M
+    "Bv6":  dict(channels=[32, 64, 64], nb_conv=2, conv_type="2+1D", max_pool=False, bias=False, instance_norm=True),   # ????, 634.06 MMac,    Params: 1.35 M
+    "B":    dict(channels=[32, 64, 64], nb_conv=2, conv_type="3D", max_pool=True, bias=False, instance_norm=True),      # 0.92, 2.47 GMac,      Params: 1.57 M
 }
 
 
@@ -119,9 +126,14 @@ def flatten_state_dict(from_state, to_state):
 
 
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Model sizes')
+    parser.add_argument('--preset', default='Bv5', type=str)
+    args = parser.parse_args()
+
     from torchsummary import summary
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    net = WideBranchNet(time_length=7, num_classes=[7**2, 9**2], variant='Bv5').to(device)
+    net = WideBranchNet(time_length=7, num_classes=[7**2, 9**2], variant=args.preset).to(device)
     # net = WideBranchNet_Strided(time_length=7, stride=3).to(device)
 
     # state = torch.load("../avenue_92.18.pth", map_location=device)
