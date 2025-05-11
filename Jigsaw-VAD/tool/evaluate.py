@@ -57,11 +57,25 @@ def gaussian_filter_(support, sigma):
 
 
 class RecordResult(object):
-    def __init__(self, fpr=None, tpr=None, auc=-np.inf, dataset=None):
+    def __init__(self, fpr=None, tpr=None, auc=-np.inf, dataset=None, thresholds=None, labels=None, scores=None):
         self.fpr = fpr
         self.tpr = tpr
         self.auc = auc
+        self.ths = thresholds
+        self.labels = labels
+        self.scores = scores
         self.dataset = dataset
+
+    def get_accuracy_at_call(self, threshold_FN):
+        threshold = self.ths[self.tpr > (1-threshold_FN)][0]
+        pred = np.where(self.scores > threshold, 1, 0)
+        return (pred == self.labels)[pred == 1].mean()
+
+    def get_AP_curve(self):
+        return metrics.precision_recall_curve(self.labels, self.scores)
+
+    def get_AP_score(self):
+        return metrics.average_precision_score(self.labels, self.scores)
 
     def __lt__(self, other):
         return self.auc < other.auc
@@ -518,10 +532,10 @@ def compute_auc(res, reverse, smoothing):
         labels = np.concatenate((labels[:], gt[i]), axis=0)
 
     # print("label.shape:{}, scores.shape:{}".format(labels.shape, scores.shape))
-    fpr, tpr, _ = metrics.roc_curve(labels, scores, pos_label=1)
+    fpr, tpr, thresholds = metrics.roc_curve(labels, scores, pos_label=1)
     auc = metrics.auc(fpr, tpr)
 
-    results = RecordResult(fpr, tpr, auc, dataset)
+    results = RecordResult(fpr, tpr, auc, dataset, thresholds, labels, scores)
     return results
 
 
