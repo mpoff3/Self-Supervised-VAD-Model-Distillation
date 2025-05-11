@@ -46,11 +46,11 @@ def get_configs():
     parser.add_argument("--out_checkpoints", type=str, default='./checkpoint', help="out folder for the checkpoints")
     parser.add_argument("--model_config", type=str, default='B', help=f"Configuration of the network among the predone config: {list(model.MODEL_CONFIGS.keys())}")
     parser.add_argument('--interpolation_method', type=str, default='max_pool',
-                      choices=['max_pool', 'linear', 'nearest', 'gaussian', 'moving_avg', 'none'],
-                      help='Method to use for interpolating scores when sample_step > 1')
+                        choices=['max_pool', 'linear', 'nearest', 'gaussian', 'moving_avg', 'none'],
+                        help='Method to use for interpolating scores when sample_step > 1')
     parser.add_argument('--filter_method', type=str, default='mean',
-                      choices=['mean', 'gaussian', 'median', 'bilateral', 'none'],
-                      help='Method to use for 3D filtering of scores')
+                        choices=['mean', 'gaussian', 'median', 'bilateral', 'none'],
+                        help='Method to use for 3D filtering of scores')
 
     args = parser.parse_args()
 
@@ -75,6 +75,31 @@ def train(args):
     data_dir = f"{DATA_DIR}{args.dataset}_frames/training"
     detect_pkl = f'detect/{args.dataset}_train_detect_result_yolov3.pkl'
 
+    net = model.WideBranchNet(time_length=args.sample_num, num_classes=[args.sample_num ** 2, 81], variant=args.model_config)
+    if args.model_stride > 1:
+        net = model.WideBranchNet_Strided(time_length=args.sample_num, stride=args.model_stride, nb_patches=9, variant=args.model_config)
+
+    testing_dataset = VideoAnomalyDataset_C3D(f"{DATA_DIR}{args.dataset}_frames/testing",
+                                              dataset=args.dataset,
+                                              detect_dir=f'detect/{args.dataset}_test_detect_result_yolov3.pkl',
+                                              fliter_ratio=args.filter_ratio,
+                                              sample_step=args.sample_step,
+                                              frame_num=args.sample_num)
+
+    testing_data_loader = DataLoader(testing_dataset, batch_size=args.batch_size, shuffle=False, num_workers=(args.workers+1)//2, drop_last=False,
+                                     prefetch_factor=args.prefetch if args.workers > 0 else None, persistent_workers=True if args.workers > 0 else False, pin_memory=True)
+
+    if args.checkpoint is not None:
+        state = torch.load(args.checkpoint, map_location=args.device)
+        print('load ' + args.checkpoint)
+        try:
+            net.load_state_dict(state, strict=True)
+        except Exception:
+            net.load_state_dict(model.flatten_state_dict(state, net.state_dict()), strict=True)
+        net.to(args.device)
+        smoothed_auc, smoothed_auc_avg, _ = val(args, testing_data_loader, net)
+        exit(0)
+
     vad_dataset = VideoAnomalyDataset_C3D(data_dir,
                                           dataset=args.dataset,
                                           detect_dir=detect_pkl,
@@ -87,31 +112,6 @@ def train(args):
     vad_dataloader = DataLoader(vad_dataset, batch_size=args.batch_size, shuffle=True, persistent_workers=True if args.workers > 0 else False,
                                 num_workers=args.workers, pin_memory=True, prefetch_factor=args.prefetch if args.workers > 0 else None,
                                 )
-
-    testing_dataset = VideoAnomalyDataset_C3D(f"{DATA_DIR}{args.dataset}_frames/testing",
-                                              dataset=args.dataset,
-                                              detect_dir=f'detect/{args.dataset}_test_detect_result_yolov3.pkl',
-                                              fliter_ratio=args.filter_ratio,
-                                              sample_step=args.sample_step,
-                                              frame_num=args.sample_num)
-
-    testing_data_loader = DataLoader(testing_dataset, batch_size=args.batch_size, shuffle=False, num_workers=(args.workers+1)//2, drop_last=False,
-                                     prefetch_factor=args.prefetch if args.workers > 0 else None, persistent_workers=True if args.workers > 0 else False, pin_memory=True)
-
-    net = model.WideBranchNet(time_length=args.sample_num, num_classes=[args.sample_num ** 2, 81], variant=args.model_config)
-    if args.model_stride > 1:
-        net = model.WideBranchNet_Strided(time_length=args.sample_num, stride=args.model_stride, nb_patches=9, variant=args.model_config)
-
-    if args.checkpoint is not None:
-        state = torch.load(args.checkpoint, map_location=args.device)
-        print('load ' + args.checkpoint)
-        try:
-            net.load_state_dict(state, strict=True)
-        except Exception:
-            net.load_state_dict(model.flatten_state_dict(state, net.state_dict()), strict=True)
-        net.to(args.device)
-        smoothed_auc, smoothed_auc_avg, _ = val(args, testing_data_loader, net)
-        exit(0)
 
     net.to(args.device)
     net = net.train()
@@ -220,20 +220,20 @@ def val(args, testing_data_loader, net=None):
                 video_output[video_][frame_] = []
             video_output[video_][frame_].append([s_score_, t_score_])
 
-    micro_auc, macro_auc = save_and_evaluate(video_output, running_date, dataset=args.dataset, sample_step=args.sample_step, interpolation_method=args.interpolation_method, filter_method=args.filter_method)
+    micro_auc, macro_auc = save_and_evaluate(video_output, running_date, dataset=args.dataset, sample_step=args.sample_step, interpolation_method=args.interpolation_method, filter_method=args.filter_method, name=args.model_config)
     return micro_auc, macro_auc, running_date
 
 
-def save_and_evaluate(video_output, running_date, dataset='shanghaitech', sample_step=1, interpolation_method='max_pool', filter_method='mean'):
-    pickle_path = './log/video_output_ori_{}.pkl'.format(running_date)
+def save_and_evaluate(video_output, running_date, dataset='shanghaitech', sample_step=1, interpolation_method='max_pool', filter_method='mean', name=None):
+    pickle_path = './log/video_output_ori_{}.pkl'.format(running_date if name is None else name)
     with open(pickle_path, 'wb') as write:
         pickle.dump(video_output, write, pickle.HIGHEST_PROTOCOL)
     if dataset == 'shanghaitech':
         video_output_spatial, video_output_temporal, video_output_complete = remake_video_output(video_output, dataset=dataset)
     else:
-        _, _, video_output_complete = remake_video_3d_output(video_output, dataset=dataset, sample_step=sample_step, 
-                                                           interpolation_method=interpolation_method, 
-                                                           filter_method=filter_method)
+        _, _, video_output_complete = remake_video_3d_output(video_output, dataset=dataset, sample_step=sample_step,
+                                                             interpolation_method=interpolation_method,
+                                                             filter_method=filter_method)
     smoothed_res, smoothed_auc_list = evaluate_auc(video_output_complete, dataset=dataset)
     return smoothed_res.auc, np.mean(smoothed_auc_list)
 
@@ -246,3 +246,4 @@ if __name__ == '__main__':
     # python main.py --dataset avenue --val_step 100 --print_interval 20 --batch_size 192 --sample_num 7 --epochs 100 --static_threshold 0.2 --sample_step 1 --model_config Mv6
     # python main.py --dataset avenue --val_step 100 --print_interval 20 --batch_size 192 --sample_num 7 --epochs 3 --static_threshold 0.2 --debug_data
     # python main.py --dataset avenue --sample_num 7 --checkpoint ../avenue_92.18.pth --sample_step 1
+    # python main.py --dataset avenue --sample_num 7 --checkpoint ../final/Bstride2.pth --sample_step 1  --workers 4
